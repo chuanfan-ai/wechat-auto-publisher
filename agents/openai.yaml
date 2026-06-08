@@ -1,0 +1,8 @@
+interface:
+  display_name: "WeChat Auto Publisher"
+  short_description: "自动调研、写作、排版并生成公众号草稿"
+  brand_color: "#1677FF"
+  default_prompt: "Use $wechat-auto-publisher to research a recent topic, draft it in Khazix style, format it for WeChat, and save it as a draft."
+policy:
+  allow_implicit_invocation: true
+
