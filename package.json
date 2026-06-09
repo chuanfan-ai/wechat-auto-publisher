@@ -1,0 +1,21 @@
+{
+  "name": "wechat-auto-publisher",
+  "version": "0.1.0",
+  "description": "Agent skill for researching, writing, formatting, and saving WeChat Official Account drafts.",
+  "type": "module",
+  "bin": {
+    "wechat-auto-init": "./scripts/init-config.mjs",
+    "wechat-auto-render": "./scripts/render-wechat-html.mjs",
+    "wechat-auto-publish": "./scripts/publish-draft.mjs"
+  },
+  "scripts": {
+    "init": "node scripts/init-config.mjs",
+    "render": "node scripts/render-wechat-html.mjs",
+    "publish": "node scripts/publish-draft.mjs",
+    "check": "node scripts/render-wechat-html.mjs --self-test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
