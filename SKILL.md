@@ -1,7 +1,6 @@
 ---
 name: wechat-auto-publisher
-description: |
-  WeChat Official Account end-to-end draft creation skill. Use when the user wants to generate a public-account article from a topic: initialize WeChat API credentials, search recent news, write a long-form article in the Digital Life Khazix style, choose reusable licensed images with attribution, format as WeChat-compatible inline-style HTML, upload images, and save a draft in the WeChat Official Account backend. This skill creates drafts only and never mass-sends or publishes automatically.
+description: WeChat Official Account end-to-end draft creation skill. Use when the user wants to generate a public-account article from a topic: initialize WeChat API credentials, search recent news, write a long-form article in the Digital Life Khazix style, choose reusable licensed images with attribution, format as WeChat-compatible inline-style HTML, upload images, and save a draft in the WeChat Official Account backend. This skill creates drafts only and never mass-sends or publishes automatically.
 ---
 
 # WeChat Auto Publisher
@@ -113,25 +112,47 @@ node scripts/publish-draft.mjs dist/wechat.html \
   --title "文章标题" \
   --author "作者名" \
   --digest "摘要" \
-  --cover path/to/cover.jpg
+  --cover path/to/cover.jpg \
+  [--images-dir path/to/images] \
+  [--show-ip]
 ```
 
 The script:
 
-- loads local WeChat credentials
+- loads local WeChat credentials (see credential lookup order below)
 - fetches `access_token`
 - uploads non-WeChat body images with `media/uploadimg`
 - uploads the cover with `material/add_material`
 - creates a draft with `draft/add`
 - enables comments by default
+- on `40164 invalid ip ... not in whitelist`, auto-detects the caller's egress IP and prints a step-by-step help block pointing to the WeChat backend whitelist page
+- with `--show-ip`, prints the egress IP at startup so you can confirm it before adding to the whitelist
+- with `--images-dir <dir>`, treats that directory as the base for resolving `<img src="...">` paths inside the HTML (default: the directory of the HTML file). Use this when the HTML is in `dist/` but images live in the project root `images/`.
 
 If there is no explicit cover, choose a suitable article image as cover only when its license is clear.
+
+### Credential Lookup Order
+
+`scripts/config.mjs` looks for `WECHAT_APP_ID` / `WECHAT_APP_SECRET` in this order (later wins):
+
+1. `~/.wechat-auto-publisher/.env` (user-level)
+2. `./.wechat-auto-publisher/.env` (project-level, relative to cwd)
+3. `<skill_dir>/.wechat-auto-publisher/.env` (skill-level, follows the entry script)
+4. `process.env`
+
+The skill-level entry (3) means the credential file can sit next to `publish-draft.mjs` and work regardless of cwd. This removes the "copy `.env` into the working directory" workaround.
 
 ## Failure Rules
 
 - Missing credentials: run first-run setup.
-- IP whitelist error: tell the user the API caller IP must be added in WeChat Official Account backend. Do not invent a workaround.
+- IP whitelist error (`errcode: 40164`): the script auto-prints a help block with the current egress IP and the backend URL. Add that IP under **设置与开发 → 基本配置 → 公众号开发信息 → IP 白名单**, then re-run with the same command. Do not invent a workaround.
+- Cloud/container egress IPs can change between runs. If the whitelist keeps flipping, add a CIDR range (e.g. `115.190.0.0/16`) or use `--show-ip` to confirm the IP before adding.
 - Image license unclear: do not use that image.
 - Fact source unclear: mark the claim as uncertain or remove it.
 - WeChat API errors: report `errcode` and `errmsg`, without exposing credentials.
+
+## Script Internals (for maintainers)
+
+- `scripts/render-wechat-html.mjs` uses an entry-only CLI guard (`if (import.meta.url === file://${process.argv[1]}`)`) so it is safe to import from other scripts without polluting stdout or accidentally reading files. The previous version had a top-level `parseArgs(process.argv.slice(2))` that caused `publish-draft.mjs` to mis-read the publish command's argv.
+- `scripts/publish-draft.mjs` resolves the cover path against `process.cwd()` (not the HTML directory) because covers are typically specified relative to where the user runs the command.
 

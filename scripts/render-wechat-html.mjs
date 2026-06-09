@@ -74,22 +74,31 @@ function selfTest() {
   console.log("render-wechat-html self-test passed");
 }
 
-const args = parseArgs(process.argv.slice(2));
-if (args.selfTest) {
-  selfTest();
-} else if (args.input) {
-  const inputPath = path.resolve(args.input);
-  const html = fs.readFileSync(inputPath, "utf8");
-  const out = ensureWechatRoot(html);
-  if (args.output) {
-    const outputPath = path.resolve(args.output);
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, `${out}\n`);
+function runCli() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.selfTest) {
+    selfTest();
+  } else if (args.input) {
+    const inputPath = path.resolve(args.input);
+    const html = fs.readFileSync(inputPath, "utf8");
+    const out = ensureWechatRoot(html);
+    if (args.output) {
+      const outputPath = path.resolve(args.output);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, `${out}\n`);
+    } else {
+      process.stdout.write(`${out}\n`);
+    }
   } else {
-    process.stdout.write(`${out}\n`);
+    console.error("Usage: node scripts/render-wechat-html.mjs <input.html> [-o output.html] [--self-test]");
+    process.exit(1);
   }
-} else if (import.meta.url === `file://${process.argv[1]}`) {
-  console.error("Usage: node scripts/render-wechat-html.mjs <input.html> [-o output.html]");
-  process.exit(1);
+}
+
+// 守卫：仅当本文件被作为入口直接执行时才跑 CLI；被 import 时不污染。
+// 修：原先顶层直接执行 `parseArgs(process.argv.slice(2))` 并在 `if (args.input)` 里读文件，
+// 这会导致 publish-draft.mjs import 本模块时用 publish 的 argv 误读 HTML、误写 stdout。
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runCli();
 }
 

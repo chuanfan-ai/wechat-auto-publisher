@@ -8,7 +8,15 @@ export function homeDir() {
   return process.env.HOME || process.env.USERPROFILE || os.homedir();
 }
 
-export function configPaths(cwd = process.cwd()) {
+export function configPaths(cwd = process.cwd(), extraDirs = []) {
+  // 查找顺序：调用方传入的额外目录 → cwd → HOME
+  // 调用方通常传入 entry 脚本所在目录（path.dirname(fileURLToPath(import.meta.url))），
+  // 这样不管从哪个 cwd 启动都能找到随 skill 打包的 .env。
+  const extra = extraDirs.map((d) => ({
+    dir: d,
+    config: path.join(d, APP_DIR, "config.json"),
+    env: path.join(d, APP_DIR, ".env"),
+  }));
   return {
     userDir: path.join(homeDir(), APP_DIR),
     userConfig: path.join(homeDir(), APP_DIR, "config.json"),
@@ -16,6 +24,7 @@ export function configPaths(cwd = process.cwd()) {
     projectDir: path.join(cwd, APP_DIR),
     projectConfig: path.join(cwd, APP_DIR, "config.json"),
     projectEnv: path.join(cwd, APP_DIR, ".env"),
+    extra,
   };
 }
 
@@ -42,21 +51,29 @@ export function readEnvIfExists(filePath) {
   return values;
 }
 
-export function loadConfig(cwd = process.cwd()) {
-  const p = configPaths(cwd);
-  return {
-    ...readJsonIfExists(p.userConfig),
-    ...readJsonIfExists(p.projectConfig),
-  };
+export function loadConfig(cwd = process.cwd(), extraDirs = []) {
+  const p = configPaths(cwd, extraDirs);
+  // 优先级：用户 HOME（全局）< cwd 项目 < extraDirs（脚本目录）—— extraDirs 压最后，覆盖力最强
+  // 这样 scriptDir 下的配置可以覆盖项目级和用户级。
+  const merged = {};
+  for (const k of [p.userConfig, p.projectConfig, ...p.extra.map((e) => e.config)]) {
+    Object.assign(merged, readJsonIfExists(k));
+  }
+  return merged;
 }
 
-export function loadCredentials(cwd = process.cwd()) {
-  const p = configPaths(cwd);
-  const env = {
-    ...readEnvIfExists(p.userEnv),
-    ...readEnvIfExists(p.projectEnv),
-    ...process.env,
-  };
+export function loadCredentials(cwd = process.cwd(), extraDirs = []) {
+  const p = configPaths(cwd, extraDirs);
+  // 优先级（低 → 高）：HOME → cwd → extras（脚本目录）→ process.env
+  // 后写覆盖前写，所以 .env 文件中靠后位置 + process.env 最终胜出。
+  const env = {};
+  for (const k of [p.userEnv, p.projectEnv, ...p.extra.map((e) => e.env), ""]) {
+    if (k === "") {
+      Object.assign(env, process.env);
+    } else {
+      Object.assign(env, readEnvIfExists(k));
+    }
+  }
   const appId = String(env.WECHAT_APP_ID || "").trim();
   const appSecret = String(env.WECHAT_APP_SECRET || "").trim();
   if (!appId || !appSecret) {
