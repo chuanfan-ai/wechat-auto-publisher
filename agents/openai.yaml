@@ -1,8 +1,7 @@
 interface:
-  display_name: "WeChat Auto Publisher"
-  short_description: "自动调研、写作、排版并生成公众号草稿"
+  display_name: "微信公众号自动发布"
+  short_description: "联网调研、AI 长文写作、智能排版、合规配图，生成公众号草稿箱"
   brand_color: "#1677FF"
-  default_prompt: "Use $wechat-auto-publisher to research a recent topic, draft it in Khazix style, format it for WeChat, and save it as a draft."
+  default_prompt: "用 $wechat-auto-publisher 调研一个近期选题，按卡兹克风格写长文，AI 智能排版（Gemini 协议中转），配可复用授权图，存到公众号草稿箱。"
 policy:
   allow_implicit_invocation: true
-

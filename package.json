@@ -1,22 +1,35 @@
 {
   "name": "wechat-auto-publisher",
-  "version": "0.1.0",
-  "description": "Agent skill for researching, writing, formatting, and publishing WeChat Official Account drafts.",
+  "version": "0.4.0",
+  "description": "微信公众号端到端 Agent 技能：联网调研、AI 长文写作（卡兹克风格）、AI 智能排版（Gemini 协议中转）、合规配图、生成公众号草稿箱。仅写草稿，不群发。",
   "type": "module",
   "bin": {
     "wechat-auto-init": "./scripts/init-config.mjs",
     "wechat-auto-render": "./scripts/render-wechat-html.mjs",
+    "wechat-auto-layout": "./scripts/layout-html.mjs",
     "wechat-auto-publish": "./scripts/publish-draft.mjs"
   },
   "scripts": {
     "init": "node scripts/init-config.mjs",
     "render": "node scripts/render-wechat-html.mjs",
+    "layout": "node scripts/layout-html.mjs",
     "publish": "node scripts/publish-draft.mjs",
     "check": "node scripts/render-wechat-html.mjs --self-test"
   },
+  "keywords": [
+    "wechat",
+    "公众号",
+    "agent",
+    "skill",
+    "ai-writing",
+    "khazix",
+    "gemini",
+    "排版",
+    "写作"
+  ],
+  "author": "chuanfan-ai",
+  "license": "MIT",
   "engines": {
     "node": ">=18"
-  },
-  "license": "MIT"
+  }
 }
-
