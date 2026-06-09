@@ -89,11 +89,10 @@ const DEFAULT_SYSTEM_INSTRUCTION =
   "## 4. UI 组件化映射规则库\n" +
   "遇到特定内容，保持原文不变，自动套用以下视觉组件包裹：\n" +
   "1. 【大数字标题组件】：遇到文中的\"01、04\"等数字序号，采用\"超大字号 + 空心描边（或极浅实心色） + 并排紧凑的深色标题\"进行样式包裹。\n" +
-  "2. 段落标题：采用 26 号白色字体，字体背景颜色为阿里蓝，仅包裹字体\n" +
-  "3. 【高亮笔组件（渐变升级）】：遇到原文的核心概念或金句，严禁使用死板的纯色背景，必须模拟真实荧光笔的渐变质感包裹原句。\n" +
-  "   * 方案A（扫光高亮）：使用左深右浅的线性渐变背景包裹文字。代码规范示例：`background: linear-gradient(90deg, rgba([主色RGB], 0.25) 0%, rgba([主色RGB], 0.02) 100%); padding: 2px 6px; border-radius: 4px; font-weight: bold;`\n" +
-  "   * 方案B（半高马克笔下划线）：文字底部添加渐变粗线。代码规范示例：`background: linear-gradient(90deg, rgba([主色RGB], 0.45) 0%, rgba([主色RGB], 0) 100%); background-size: 100% 40%; background-position: 0 100%; background-repeat: no-repeat; font-weight: bold;`\n" +
-  "4. 【操作/代码块组件】：遇到提示词、需要复制的代码、特定操作指令，使用一个独立容器包裹原文。四周使用契合当前主色彩体系的细虚线（如 `border: 1px dashed 主色`），背景保持纯白留白（`background-color: transparent`），并配合充裕的内边距（如 `padding: 16px; border-radius: 6px;`），呈现极简的呼吸感。\n\n" +
+  "2. 【金句标注】（必做，每篇至少 3 处）：遇到原文的核心概念、关键判断、振聋发聩的金句，必须用主题色下划线包裹，模拟真实荧光笔的笔触感。优先用方案 B（半高马克笔下划线，主题色 #1677ff），次选方案 A（扫光高亮）。\n" +
+  "   * 方案A（扫光高亮）：`background: linear-gradient(90deg, rgba(22,119,255,0.25) 0%, rgba(22,119,255,0.02) 100%); padding: 2px 6px; border-radius: 4px; font-weight: bold;`\n" +
+  "   * 方案B（半高马克笔下划线，**默认**）：`background: linear-gradient(90deg, rgba(22,119,255,0.45) 0%, rgba(22,119,255,0) 100%); background-size: 100% 40%; background-position: 0 100%; background-repeat: no-repeat; padding: 0 2px; font-weight: bold;`\n" +
+  "3. 【操作/代码块组件】：遇到提示词、需要复制的代码、特定操作指令，使用一个独立容器包裹原文。四周使用契合当前主色彩体系的细虚线（如 `border: 1px dashed 主色`），背景保持纯白留白（`background-color: transparent`），并配合充裕的内边距（如 `padding: 16px; border-radius: 6px;`），呈现极简的呼吸感。\n\n" +
   "## 5. 微信底层排版规范（存活红线）\n" +
   "1. 根容器：必须且只能用一层 <section> 包裹全局，严格附加样式 width: 100%; margin: 0; padding: 0; box-sizing: border-box;。严禁在根容器擅自添加任何像素的 padding 内边距，内容必须 100% 紧贴边缘。\n" +
   "2. 段落与间距规范：普通纯文本段落必须使用 <p> 标签，并强制附加样式 <p style=\"margin: 0 0 24px 0; padding: 0;\"> 来拉开呼吸间距。只有在生成独立 UI 组件（如操作指令框）时，才使用 <section> 作为外层包裹容器。绝对严禁使用 <br> 进行跨段落换行。\n" +
