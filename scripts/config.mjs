@@ -10,8 +10,6 @@ export function homeDir() {
 
 export function configPaths(cwd = process.cwd(), extraDirs = []) {
   // 查找顺序：调用方传入的额外目录 → cwd → HOME
-  // 调用方通常传入 entry 脚本所在目录（path.dirname(fileURLToPath(import.meta.url))），
-  // 这样不管从哪个 cwd 启动都能找到随 skill 打包的 .env。
   const extra = extraDirs.map((d) => ({
     dir: d,
     config: path.join(d, APP_DIR, "config.json"),
@@ -53,8 +51,6 @@ export function readEnvIfExists(filePath) {
 
 export function loadConfig(cwd = process.cwd(), extraDirs = []) {
   const p = configPaths(cwd, extraDirs);
-  // 优先级：defaultConfig（最底）→ HOME → cwd → extraDirs（脚本目录，覆盖力最强）
-  // v11：底部加 defaultConfig，确保 require_frontmatter 等新开关有默认值。
   const merged = { ...defaultConfig() };
   for (const k of [p.userConfig, p.projectConfig, ...p.extra.map((e) => e.config)]) {
     Object.assign(merged, readJsonIfExists(k));
@@ -64,8 +60,6 @@ export function loadConfig(cwd = process.cwd(), extraDirs = []) {
 
 export function loadCredentials(cwd = process.cwd(), extraDirs = []) {
   const p = configPaths(cwd, extraDirs);
-  // 优先级（低 → 高）：HOME → cwd → extras（脚本目录）→ process.env
-  // 后写覆盖前写，所以 .env 文件中靠后位置 + process.env 最终胜出。
   const env = {};
   for (const k of [p.userEnv, p.projectEnv, ...p.extra.map((e) => e.env), ""]) {
     if (k === "") {
@@ -82,17 +76,60 @@ export function loadCredentials(cwd = process.cwd(), extraDirs = []) {
   return { appId, appSecret };
 }
 
+// v12 起：读外部 API key（同时供排版和生图用）。返回字符串（可能为空，调用方判断）。
+// 通过 config.external_api.api_key_env 决定读哪个环境变量名，默认 EXTERNAL_API_KEY。
+export function loadExternalApiKey(cwd = process.cwd(), extraDirs = [], config = null) {
+  const p = configPaths(cwd, extraDirs);
+  const env = {};
+  for (const k of [p.userEnv, p.projectEnv, ...p.extra.map((e) => e.env), ""]) {
+    if (k === "") {
+      Object.assign(env, process.env);
+    } else {
+      Object.assign(env, readEnvIfExists(k));
+    }
+  }
+  const cfg = config || loadConfig(cwd, extraDirs);
+  const keyEnv = (cfg.external_api && cfg.external_api.api_key_env) || "EXTERNAL_API_KEY";
+  return String(env[keyEnv] || "").trim();
+}
+
 export function defaultConfig() {
   return {
+    // v12：首次配置完成标记。init-config.mjs 写入时设 true。
+    // SKILL.md 让 agent 启动时检测：false → 引导对话；true → 跳过引导。
+    setup_completed: false,
+
+    // v12：模式开关
+    // layout_mode: external 调外部 API（推荐）/ self Agent 自己用当前模型排
+    layout_mode: "external",
+    // image_mode: external 调外部 API 生图 / self Agent 自己尝试 / manual 手动找图
+    image_mode: "external",
+
+    // v12：统一外部 API 配置。排版和生图都走这同一个 host + key。
+    external_api: {
+      api_base: "https://chuanfanai.com",
+      api_key_env: "EXTERNAL_API_KEY",
+      // 排版
+      layout_model: "gemini-3.1-flash-lite",
+      // 生图（OpenAI Images API 协议，POST /v1/images/generations）
+      image_gen_model: "gpt-image-2",
+      image_gen_endpoint: "/v1/images/generations",
+      image_gen_size: "1024x1024",
+      image_gen_quality: "low",
+      image_gen_format: "jpeg"
+    },
+
+    // v11 标题去重三层加固
+    require_frontmatter: false,
+
+    // v12 配图硬约束
+    require_images: true,
+    min_images: 3,
+
     publish_method: "api",
     source_window_days: 7,
     need_open_comment: 1,
     only_fans_can_comment: 0,
-    // v11 新增：强约束开关。开 true 后，
-    //   - layout-html.mjs 拒绝没有 --- frontmatter 头的 .md 源稿；
-    //   - publish-draft.mjs 拒绝既没有 sidecar .meta.json、也没有 --title 的发布请求。
-    // 默认 false 保持向后兼容；建议团队稳定使用 frontmatter 工作流后开 true。
-    require_frontmatter: false,
     writing_style: {
       identity: "digital-life-khazix",
       reader: "对 AI 和新技术保持好奇的公众号读者",

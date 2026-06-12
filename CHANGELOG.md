@@ -1,5 +1,56 @@
 # 更新日志
 
+## v12 · 2026-06-12
+
+### 新增
+
+- **AI 生图入口** `scripts/generate-images.mjs`
+  - 按 `config.image_mode` 分三条路径：
+    - `external`：调 chuanfanai.com 的 OpenAI Images 协议中转生图（默认 `gpt-image-2`），下载到本地
+    - `self`：转写 `images/descriptions.md` 让 Agent 自带工具按描述生图或人工配图
+    - `manual`：脚本不做事，Agent 按 `references/image-policy.md` 找网络授权图
+  - 输入 `images/prompts.json`（数组，每项 `{name, prompt}`），Agent 根据 draft 内容生成
+  - 响应支持 `url`（下载）和 `b64_json`（base64 解码）两种格式
+- **排版 prompt 剥离** `references/layout-prompt.md`
+  - SYSTEM INSTRUCTION + USER PROMPT TEMPLATE 两段从 `layout-html.mjs` 抽出来
+  - 单一信任源：`layout-html.mjs` 启动按二级标题切片读，`layout_mode: self` 时 Agent 也读这份
+  - 改规则只改一处，脚本和 Agent 自排永不脱节
+- **排版三种 mode**（`layout-html.mjs` 加 `--mode`）
+  - `external`（默认）：调外部 API 全自动跑完
+  - `prompt-only`：吐 SYSTEM + USER prompt 到 stdout，Agent 拿去喂自己的模型
+  - `postprocess`：接 Agent 的 HTML 草稿（`--raw <path>`），回填占位符 + 写 sidecar
+- **配图硬约束**（`config.json` 加 `require_images: true` + `min_images: 3`）
+  - 默认每篇至少 3 张图，不够 `layout-html.mjs` 拒绝排版
+  - 报错时打印 4 种修复方式：AI 生图 / 手动找图 / `--no-images` / 改阈值
+  - `--no-images` 显式跳过，仅在用户明确说"这篇不要图"时用
+- **初始化重写**（`scripts/init-config.mjs`）
+  - 删 readline 交互（Agent 平台没人在终端答题）
+  - 改 CLI flags 非交互：`--wechat-app-id` / `--wechat-app-secret` / `--layout-mode` / `--image-mode` / `--external-api-key`
+  - 也支持 stdin JSON（`--write -`）
+  - 落盘 `setup_completed: true` / `layout_mode` / `image_mode`
+- **统一外部 API**（`config.external_api` 段）
+  - 一把 `EXTERNAL_API_KEY` 同时管排版和生图，replace `LAYOUT_API_KEY`
+  - host 统一 `https://chuanfanai.com`
+  - 排版模型 `gemini-3.1-flash-lite`，生图模型 `gpt-image-2`
+  - `loadExternalApiKey()` 工具函数，读取顺序：用户级 .env → 项目级 .env → skill 级 .env → process.env
+  - v11 老变量 `LAYOUT_API_KEY` 仍兼容兜底，老脚本不破坏
+- **SKILL.md 4 步中文引导**
+  - 启动检查 `setup_completed`，未配置就按 4 步问用户
+  - 全部用中文，永远不丢英文枚举值（external/self/manual）给用户
+  - 收齐字段后调 `init-config.mjs` 非交互写入
+
+### 文档
+
+- `SKILL.md` 重写：4 步引导 + 决策矩阵 + 新流程（先配图再排版）
+- `README.md` v12 改造：能力清单 + 4 步引导 + 决策矩阵 + 失败处理新增 4 项
+- `references/image-policy.md` 加 ① AI 生图章节（prompts.json 怎么写、文件命名、署名）
+- `.env.example` 加 `EXTERNAL_API_KEY`，标注 v11 兼容
+
+### 兼容性
+
+- **不向后兼容老用户**：v11 用户的 `config.json` 没 `setup_completed` 字段，启动会被识别为未配置并触发引导；解决方法：要么走一遍 4 步引导（覆盖），要么手动在 `config.json` 加 `"setup_completed": true` 和 `"layout_mode": "external"` 和 `"image_mode": "manual"`
+- `LAYOUT_API_KEY` 仍可用作 `external` 模式的兜底 key
+
 ## v11 · 2026-06-12
 
 ### 修复（关键）

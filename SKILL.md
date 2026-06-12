@@ -1,78 +1,123 @@
 ---
 name: wechat-auto-publisher
-description: 微信公众号端到端草稿创建技能。当用户想从选题开始生成公众号文章时使用：初始化公众号 API 凭证、检索近期资料、按"卡兹克"风格写长文、挑选可复用授权图片并标注来源、格式化为公众号兼容的内联样式 HTML、上传图片、保存到公众号草稿箱。本技能只创建草稿，绝不自动群发或定时发布。
+description: 微信公众号端到端草稿创建技能。当用户想从选题开始生成公众号文章时使用：首次运行用 4 步中文引导收集配置（公众号凭证 + 排版模式 + 生图模式 + 可选 API key）、检索近期资料、按"卡兹克"风格写长文、调外部 API 或自带模型生图、调外部 API 或自带模型排版、上传图片、保存到公众号草稿箱。本技能只创建草稿，绝不自动群发或定时发布。
 ---
 
 # 微信公众号自动发布（wechat-auto-publisher）
 
 从选题到公众号草稿箱，一站式完成。
 
-## 默认流程
+## 角色与对话风格
 
-1. 首次运行 → 初始化本地凭证配置
-2. 告诉用户默认检索窗口是近 7 天
-3. 联网搜索近期有来源的资料
-4. 按"数字生命卡兹克"风格写长文
-5. 在送排版前，删掉卡兹克原文里的个人公众号引流尾巴（投稿邮箱、互推文案等）
-6. 找可复用授权图片并记录来源
-7. 在正文自然段插入图片占位符
-8. **把标题/副标题/作者/摘要写到 frontmatter，正文不再写 H1 大标题**（v11 推荐）
-9. 排成公众号兼容的 HTML（inline-style），同时写 sidecar `.meta.json`
-10. 上传正文图 + 封面图到公众号
-11. **只存草稿箱**——不群发、不发布、不定时
+你是用户的写作 + 排版助手。所有对用户的对话**一律用中文**，不要把 `external` / `self` / `manual` 等英文枚举值直接抛给用户——内部用，对外用中文说。
 
-## 首次运行
+## 启动检查（每次会话开头都做）
 
-如果 `~/.wechat-auto-publisher/config.json` 不存在，先跑：
+读 `~/.wechat-auto-publisher/config.json`：
+
+- **不存在 或 `setup_completed != true`** → 进入下面的"首次配置 4 步引导"
+- **已存在且 setup_completed=true** → 跳过引导，按下面的"默认流程"走
+
+## 首次配置（4 步中文引导）
+
+这 4 个问题按顺序问，每问一个等用户答完再问下一个。回答中给用户清晰的选择 + 一句话解释，**永远不要丢英文枚举值**。
+
+### 第 1 步：公众号凭证
+
+> 请粘贴你的公众号 AppID 和 AppSecret。
+>
+> 在微信公众号后台 → **设置与开发 → 基本配置 → 公众号开发信息** 里能找到。两者都是字符串，分两行发给我即可。
+
+收集：`WECHAT_APP_ID` / `WECHAT_APP_SECRET`
+
+### 第 2 步：排版模式
+
+> 排版用哪一种？
+>
+> **① 调外部 API（推荐）**：用一个 API key 调 chuanfanai.com 的 Gemini 中转网关，自动排好，省事；
+> **② 我自己排**：我（Agent）用当前对话的模型按规则手工排成 HTML，不调外部，但耗你这边对话 token。
+>
+> 选 ① 还是 ②？
+
+- 用户选 ①（推荐）→ 内部值 `external`
+- 用户选 ②（自排）→ 内部值 `self`
+
+### 第 3 步：生图模式
+
+> 配图用哪一种？默认要求每篇文章至少 3 张图。
+>
+> **① 调外部 API 生图（推荐）**：跟排版同一个 API key，调 chuanfanai.com 的 gpt-image-2 自动生图；
+> **② 我自己生图**：我（Agent）用自带的生图能力或写描述清单让你对照配图；
+> **③ 我手动配图**：我按授权清晰的网络图源（Wikimedia/Unsplash/Pexels 等）找好图。
+
+- 用户选 ① → 内部值 `external`
+- 用户选 ② → 内部值 `self`
+- 用户选 ③ → 内部值 `manual`
+
+### 第 4 步：外部 API key（仅当 2/3 题里有任意一题选了 ①）
+
+> 排版或生图你选了"调外部 API"，请粘贴 chuanfanai.com 的 API key（一把 key 同时管两件事）。
+>
+> 没有就到 https://chuanfanai.com 申请一个，再回来发给我。
+
+收集：`EXTERNAL_API_KEY`
+
+如果两道题都没选外部，则跳过这一步。
+
+### 收集完落盘
+
+把上面收到的字段拼成 CLI 调用：
 
 ```bash
-node scripts/init-config.mjs
+node scripts/init-config.mjs \
+  --wechat-app-id "$APP_ID" \
+  --wechat-app-secret "$APP_SECRET" \
+  --layout-mode <external|self> \
+  --image-mode <external|self|manual> \
+  [--external-api-key "$KEY"]
 ```
 
-凭证存放在本地（**严禁提交到 git**）：
+或走 stdin JSON 模式：
 
-- 用户级配置：`~/.wechat-auto-publisher/config.json`
-- 用户级密钥：`~/.wechat-auto-publisher/.env`
-- 项目级兜底：`./.wechat-auto-publisher/config.json` 与 `./.wechat-auto-publisher/.env`
+```bash
+echo '{
+  "wechat_app_id": "...",
+  "wechat_app_secret": "...",
+  "layout_mode": "external",
+  "image_mode": "external",
+  "external_api_key": "..."
+}' | node scripts/init-config.mjs --write -
+```
 
-不要在生成的文档或记忆里打印、提交或保存真实的 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`、access_token、API key。
+落盘后告诉用户：
 
-默认配置：
+> 已配好。`~/.wechat-auto-publisher/` 下生成了 `config.json` 和 `.env`，含敏感信息不要 commit 到 git。
 
-- `publish_method`：`api`
-- `source_window_days`：`7`
-- `need_open_comment`：`1`
-- `only_fans_can_comment`：`0`
-- `require_frontmatter`：`false`（v11 新增；详见下方"强约束开关"）
-- 图片策略：只用授权清晰的图片，必须标注来源
+## 默认流程（已配置完成后）
 
-## 调研
+1. 告诉用户默认检索窗口是近 7 天
+2. 联网搜索近期有来源的资料
+3. 按"数字生命卡兹克"风格写长文（`references/khazix-writing.md`）
+4. 删掉卡兹克原文里的个人公众号引流尾巴
+5. **配图先行**（v12 顺序调整）：根据 draft 内容写 `images/prompts.json`，再按 `image_mode` 跑 `generate-images.mjs`
+6. **排版后置**：图齐了再 `layout-html.mjs`（默认 `require_images: true` + `min_images: 3`，不够会报错）
+7. 把标题/副标题/作者/摘要写到 .md frontmatter，正文不再写 H1 大标题（v11 三层加固）
+8. 排成公众号兼容的 HTML（inline-style），同时写 sidecar `.meta.json`
+9. 上传正文图 + 封面图到公众号
+10. **只存草稿箱**——不群发、不发布、不定时
 
-本技能依赖近期资料，所以永远要先联网搜。先告诉用户：
+## 决策矩阵
 
-> 默认检索近 7 天资料。
+每一步该跑哪个脚本，按 `config.json` 里的 mode 决定：
 
-收集每条来源的元信息：
-
-- 标题
-- URL
-- 媒体/网站
-- 发布时间（如能拿到）
-- 访问时间
-- 一句话相关性说明
-
-优先采信一手或权威来源。无法证实的说法不要写成事实。
-
-## 写作
-
-按 `references/khazix-writing.md` 里的卡兹克写作工作流来。
-
-**红线**：
-
-- 文笔、节奏、结构、判断都按卡兹克风格
-- 送排版前删掉个人公众号引流尾巴
-- 不要保留：`作者：卡兹克`、投稿邮箱、爆料邮箱、个人联系方式、固定的涨粉引导语
-- **不要在正文写 H1 一级标题**（标题走 frontmatter，v11）
+| 步骤 | layout_mode | image_mode | 脚本 |
+|---|---|---|---|
+| 生图 | — | external | `node scripts/generate-images.mjs --output-dir images/` |
+| 生图 | — | self | `node scripts/generate-images.mjs` → 转写 `images/descriptions.md`，agent 自带工具生图或人工 |
+| 生图 | — | manual | agent 按 `references/image-policy.md` 找网络授权图 |
+| 排版 | external | — | `node scripts/layout-html.mjs --input draft.md --output dist/wechat.html --images-dir images/` |
+| 排版 | self | — | 两阶段：先 `--mode prompt-only` 吐 prompt → agent 自排 → `--mode postprocess --raw <agent写的HTML>` |
+| 发布 | — | — | `node scripts/publish-draft.mjs dist/wechat.html --cover images/01-cover.jpg --images-dir .` |
 
 ## frontmatter 协议（v11 关键）
 
@@ -102,39 +147,49 @@ digest: 上周一篇文章刷屏，讲新茶饮出海。
 | `author` | 公众号后台作者字段 | 否 |
 | `digest` | 公众号后台摘要字段（≤ 120 字，超出按标点智能截断） | 否 |
 
-`layout-html.mjs` 会自动剥离 frontmatter、把 body（不含标题）传给模型，输出 HTML 时旁边写一份 sidecar `<output>.html.meta.json`，`publish-draft.mjs` 自动读取。
+`layout-html.mjs` 自动剥离 frontmatter、把 body（不含标题）传给模型，输出 HTML 时旁边写一份 sidecar `<output>.html.meta.json`，`publish-draft.mjs` 自动读取。
 
-## 图片
+## 配图（v12 重写）
 
-按 `references/image-policy.md` 选图。
+**默认硬约束**：每篇文章至少 3 张图，不够 `layout-html.mjs` 会拒绝排版。如用户明确说"这篇不要图"，在 `layout-html.mjs` 加 `--no-images`。
 
-只使用授权清晰的图片。接受：Wikimedia Commons、Unsplash、Pexels、Pixabay、官方新闻稿/媒体素材包、其他明确声明可复用的页面。授权不清就跳过。
+### image_mode = external（推荐）
 
-每张图都要记录：
+agent 工作流：
+
+1. 读完 draft.md 后，根据章节内容写 `images/prompts.json`（数组，每项含 `name` 和 `prompt`）
+2. 跑 `node scripts/generate-images.mjs --output-dir images/`
+3. 检查 `images/` 里有 ≥ 3 张图
+
+prompts.json 怎么写见 `references/image-policy.md` 的 ① AI 生图章节。
+
+### image_mode = self
+
+`generate-images.mjs` 不调任何 API，只把 prompts.json 转成 `images/descriptions.md`。
+
+agent 工作流：
+
+1. 写 `images/prompts.json`，跑 `generate-images.mjs` 转成 `descriptions.md`
+2. 用 agent 自带的生图工具按 descriptions 生图，每张图按 `name` 字段命名存到 `images/`
+3. 如果 agent 没有生图能力，把 descriptions 告诉用户，让用户对照人工配图
+
+### image_mode = manual
+
+agent 按 `references/image-policy.md` 的"② 网络授权图片"那节，找授权清晰的图：Wikimedia Commons、Unsplash、Pexels、Pixabay、官方素材包。
+
+每张图记录：
 
 - 本地路径或 URL
 - 来源 URL
-- 作者/创作者（如有）
+- 作者/创作者
 - 授权平台/许可
 - 图片下方的署名文案
 
-送排版前用占位符（v11 统一为中文方括号格式，跟 `layout-html.mjs` 实际处理一致）：
-
-```text
-【图片位_0】
-【图片位_1】
-【图片位_2】
-```
-
-模型按编号挑图，不写 `<img>` 标签，main 流程统一回填。
-
-## 排版
-
-按 `references/wechat-layout.md` 排。
+## 排版（v12 重写）
 
 排版阶段必须输出纯 HTML + inline-style + 单层 `<section>` 根。
 
-### 默认走 AI 排版（推荐）
+### layout_mode = external（推荐）
 
 ```bash
 node scripts/layout-html.mjs \
@@ -145,8 +200,34 @@ node scripts/layout-html.mjs \
 
 输出：
 
-- `dist/wechat.html` —— 排版后的 HTML，**不含 H1 大标题**
+- `dist/wechat.html` —— 排版后的 HTML，不含 H1 大标题
 - `dist/wechat.html.meta.json` —— sidecar，从 frontmatter 提取的 title/subtitle/author/digest
+
+### layout_mode = self（两阶段）
+
+**阶段 1**：吐 prompt 给 agent
+
+```bash
+node scripts/layout-html.mjs --mode prompt-only \
+  --input draft.md \
+  --images-dir images/
+```
+
+stdout 会输出两段：`=== SYSTEM INSTRUCTION ===` 和 `=== USER PROMPT ===`。
+
+agent 把这两段送给自己的模型，让模型按规则把 markdown 排成 HTML，写到 `dist/wechat.html.raw`。
+
+**阶段 2**：脚本接 agent 的草稿，回填占位符 + 写 sidecar
+
+```bash
+node scripts/layout-html.mjs --mode postprocess \
+  --input draft.md \
+  --raw dist/wechat.html.raw \
+  --output dist/wechat.html \
+  --images-dir images/
+```
+
+排版规则是 `references/layout-prompt.md` 的单一源——脚本和 agent 自排都从这个文件读，永远不脱节。
 
 ### 手写 HTML 时走清洗器
 
@@ -154,7 +235,7 @@ node scripts/layout-html.mjs \
 node scripts/render-wechat-html.mjs input.html -o dist/wechat.html --title "标题"
 ```
 
-`render-wechat-html.mjs` 在 v11 后**不再处理 `.md`**（不做 markdown→HTML 转换），传 `.md` 会被拒。`.md` 一律走 `layout-html.mjs`。
+`render-wechat-html.mjs` 在 v11 后不再处理 `.md`，传 `.md` 会被拒。
 
 ## 草稿发布
 
@@ -177,23 +258,16 @@ node scripts/publish-draft.mjs dist/wechat.html \
 
 脚本会自动：
 
-- 加载本地公众号凭证（见下面的查找顺序）
+- 加载本地公众号凭证（用户级 → 项目级 → skill 级 → process.env）
 - 按 4 级优先级解析 title/subtitle/author/digest（详见下文）
 - 加根 `<section>` + 剥危险标签
-- **三层加固之第 3 层**：`stripLeadingTitle` 兜底（即使源稿写了 H1 也自动剥）
-- **结构 sanity check**：检测 `<section>`/`<div>` 开闭不平衡，发现就警告（不阻断）
-- 拿 `access_token`
-- 用 `media/uploadimg` 上传正文图
-- 用 `material/add_material` 上传封面
-- 用 `draft/add` 写入草稿
-- 默认开启评论
-- 遇到 `40164 invalid ip ... not in whitelist` → 自动检测调用方出口 IP 并打印白名单加白步骤
-- 加 `--show-ip` 启动时先打印出口 IP，方便先确认再加白名单
-- 加 `--images-dir <dir>` 指定 HTML 内 `<img src="...">` 的相对基准目录（默认用 HTML 所在目录，HTML 在 `dist/`、图在项目根 `images/` 时传项目根的 `images/`）
+- 三层加固之第 3 层：`stripLeadingTitle` 兜底
+- 结构 sanity check：检测 `<section>`/`<div>` 不平衡（不阻断）
+- 拿 `access_token` → 上传图 → 写草稿
+- 遇到 `40164 invalid ip` → 自动检测出口 IP 并打印白名单加白步骤
+- 加 `--show-ip` 启动时先打印出口 IP
 
-如果没指定封面，只有在图授权清晰的前提下，才从正文里挑一张合适的当封面。
-
-### 元信息 4 级优先级（v11）
+### 元信息 4 级优先级
 
 | 优先级 | 来源 | 适用 |
 |---|---|---|
@@ -203,109 +277,78 @@ node scripts/publish-draft.mjs dist/wechat.html \
 | 4 | HTML `<title>` / `<h1>` | 兜底 |
 | 5 | 文件名 | 都没有时 |
 
-发布时日志会标出每个字段的来源，方便诊断：
+## 强约束开关
 
-```text
-[wechat-auto] meta 解析：
-  title:    新茶饮出海 2.0：...    (来源: sidecar)
-  author:   船帆   (来源: sidecar)
-```
-
-### 凭证查找顺序
-
-`scripts/config.mjs` 按这个顺序找 `WECHAT_APP_ID` / `WECHAT_APP_SECRET`（后面的覆盖前面的）：
-
-1. `~/.wechat-auto-publisher/.env`（用户级）
-2. `./.wechat-auto-publisher/.env`（项目级，相对 cwd）
-3. `<skill_dir>/.wechat-auto-publisher/.env`（skill 级，跟着入口脚本走）
-4. `process.env`
-
-第 3 项的妙处：凭证文件可以放在 `publish-draft.mjs` 旁边，不管 cwd 在哪都能找到。彻底告别"复制 `.env` 到工作目录"的 workaround。
-
-## 强约束开关 require_frontmatter（v11 新增）
-
-在 `~/.wechat-auto-publisher/config.json` 设置：
-
-```json
-{ "require_frontmatter": true }
-```
-
-开启后：
-
-- `layout-html.mjs` 拒绝没有 `---` frontmatter 头的 `.md` 源稿，提示加 frontmatter
-- `publish-draft.mjs` 拒绝既没有 sidecar `.meta.json`、也没有 `--title` 的发布请求
-
-默认 `false`（向后兼容）。**建议团队稳定使用 frontmatter 工作流后开启**，作为最后一道"防遗漏"。
-
-## 失败处理
-
-- 缺凭证 → 跑首次运行
-- IP 白名单错（`errcode: 40164`）→ 脚本会自动打印友好提示和当前出口 IP。到 **设置与开发 → 基本配置 → 公众号开发信息 → IP 白名单** 把那个 IP 加进去，再重跑（其他参数不用改）。不要瞎猜
-- 云电脑/容器出口 IP 会变 → 白名单老翻车时，加一段 CIDR（如 `115.190.0.0/16`），或先用 `--show-ip` 确认再跑
-- 图片授权不清 → 跳过这张
-- 事实来源不清 → 标"不确定"或删掉
-- 公众号 API 报错 → 把 `errcode` 和 `errmsg` 报出来，不要泄露凭证
-- **公众号出现双标题** → 检查源稿是否有 `# 标题`，改用 frontmatter；publish 阶段已经有 `stripLeadingTitle` 兜底，如果还出现说明源稿层也漏了
-- **HTML 结构不平衡警告** → 检查源稿里是否有写错的 `</div>`（应为 `</section>`）或漏闭合标签
-- **render-wechat-html.mjs 拒绝处理 .md** → `.md` 走 `layout-html.mjs`，不要直接给 render
-
-## 自定义排版（Gemini 协议中转，v4 新增、v11 升级）
-
-`scripts/layout-html.mjs` 的核心思路：
-
-- **不调内置正则清洗器**——直接调 chuanfanai.com 的 Gemini 协议中转
-- **system prompt 控制视觉**：阿里蓝 #1677ff + 日落橙 #FF7A00、4 套 UI 组件、6 条微信底层规范
-- **图片走占位符协议**：用中文方括号 `【图片位_N】`，main 统一回填 `<section><img></section>`，不依赖原稿里的 `![](xxx)` 标记
-- **v11 frontmatter 剥离**：模型只看 body 不看标题，永远不生成 H1
-
-### 用法
-
-```bash
-# 1. 准备 LAYOUT_API_KEY（不 commit 到 git，建议 export 临时用）
-export LAYOUT_API_KEY="sk-xxxxxxxx"
-
-# 2. 把图放 images/ 目录（脚本会自动按文件名排序编号）
-#    images/01-cover.jpg  images/02-asean.jpg  images/03-tea.jpg ...
-
-# 3. 跑排版（自动剥离 frontmatter + 写 sidecar）
-node scripts/layout-html.mjs \
-  --input draft.md \
-  --output dist/wechat.html \
-  --images-dir images/
-
-# 4. 跑发布（--images-dir 传项目根，不要传 images/）
-node scripts/publish-draft.mjs \
-  dist/wechat.html \
-  --cover images/01-cover.jpg \
-  --images-dir .
-```
-
-### 参数
-
-| 参数 | 必填 | 说明 |
-| --- | --- | --- |
-| `--input <file>` | 是 | Markdown 原稿路径（相对 cwd） |
-| `--output <file>` | 是 | 排版后 HTML 输出路径（相对 cwd） |
-| `--images-dir <dir>` | 否 | 图片目录（相对 cwd），默认 `draft.md` 同级 `images/` |
-| `--cover <file>` | 否 | 封面文件名（仅用于打印提示） |
-| `--stream` | 否 | 走流式端点（边生成边打印） |
-| `--no-think` | 否 | 关闭思考（**默认就是关**，省 token） |
-
-### 配置文件
-
-`config.json` 的 `layout_model` 段可覆盖默认：
+`~/.wechat-auto-publisher/config.json`：
 
 ```json
 {
-  "layout_model": {
+  "require_frontmatter": true,
+  "require_images": true,
+  "min_images": 3
+}
+```
+
+- `require_frontmatter`（v11 加，默认 `false`）开启后 `layout-html.mjs` 拒绝没 frontmatter 的 .md
+- `require_images`（v12 加，默认 `true`）和 `min_images`（默认 `3`）控制配图硬约束，`--no-images` 显式跳过
+
+## 失败处理
+
+- 缺凭证 → 走首次配置 4 步引导
+- IP 白名单错（`errcode: 40164`）→ 脚本自动打印出口 IP 和加白页面，照着加
+- 出口 IP 经常变 → 加一段 CIDR（如 `115.190.0.0/16`），或先 `--show-ip` 确认
+- 图片授权不清 → 跳过这张
+- 缺 `EXTERNAL_API_KEY` → 重跑 `init-config.mjs` 或 `export EXTERNAL_API_KEY="..."`
+- 公众号 API 报错 → 把 `errcode` 和 `errmsg` 报给用户，不要泄露凭证
+- 公众号出现双标题 → 检查源稿是否有 `# 标题`，改用 frontmatter；publish 阶段已有 stripLeadingTitle 兜底
+- HTML 结构不平衡警告 → 检查源稿里有写错的 `</div>`（应为 `</section>`）或漏闭合
+- `render-wechat-html.mjs` 拒绝处理 `.md` → `.md` 走 `layout-html.mjs`
+- 图不够 3 张 → AI 生图 / 手动找图 / `--no-images` / 改 `min_images`（4 选 1）
+- 脚本 silent exit 0 完全无输出 → v11 已修 macOS symlink main guard
+
+## 自定义排版细节（给维护者）
+
+### 单一信任源：references/layout-prompt.md
+
+`layout-html.mjs` 启动时按二级标题切片，读 `## SYSTEM INSTRUCTION` 和 `## USER PROMPT TEMPLATE` 两段。
+
+self 模式下 agent 也读这份文件，两端共享同一份规则。
+
+### 占位符协议
+
+图片用中文方括号字面量：
+
+```text
+【图片位_0】  →  images/01-cover.jpg
+【图片位_1】  →  images/02-asean.jpg
+...
+```
+
+模型按编号挑图，不写 `<img>` 标签。main 拿到 HTML 后做统一回填。
+
+为什么用中文方括号：英文 `IMG_PLACEHOLDER_X` 会被 Gemini 当成 src 路径直接写进 `<img src="IMG_PLACEHOLDER_X">`，中文括号不会。
+
+### 字数硬约束
+
+排版后正文字数（剥标签后）必须 ≥ 原文清洗后字数的 95%。模型被 prompt 明确禁止摘要、改写、合并段落。
+
+### 配置文件覆盖
+
+`~/.wechat-auto-publisher/config.json`：
+
+```json
+{
+  "layout_mode": "external",
+  "image_mode": "external",
+  "external_api": {
     "api_base": "https://chuanfanai.com",
-    "model": "gemini-3.1-flash-lite",
-    "api_key_env": "LAYOUT_API_KEY",
-    "temperature": 1,
-    "top_p": 1,
-    "thinking_budget": 26240,
-    "system_instruction": "（留空走默认）",
-    "prompt_template": "（留空走默认）"
+    "api_key_env": "EXTERNAL_API_KEY",
+    "layout_model": "gemini-3.1-flash-lite",
+    "image_gen_model": "gpt-image-2",
+    "image_gen_endpoint": "/v1/images/generations",
+    "image_gen_size": "1024x1024",
+    "image_gen_quality": "low",
+    "image_gen_format": "jpeg"
   }
 }
 ```
@@ -314,67 +357,37 @@ node scripts/publish-draft.mjs \
 
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
-| `LAYOUT_API_KEY` | 是 | chuanfanai.com 的 API key。不进 config.json、不 commit |
-
-### 端点行为（2026-06-09 实测）
-
-- 同步：`POST {api_base}/v1beta/models/{model}:generateContent`
-- 流式：`POST {api_base}/v1beta/models/{model}:streamGenerateContent?alt=sse`
-- 鉴权：`Authorization: Bearer <key>` 与 URL `?key=<key>` 二选一即可
-- 思考片段：`candidates[0].content.parts[i].thought === true` → 跳过
-- 真实文本：`candidates[0].content.parts[i].text`（无 thought 字段）
-- 思考签名：`parts[i].thoughtSignature` 直接忽略
-
-### 占位符协议
-
-图片用中文方括号字面量（v11 统一约定）：
-
-```text
-【图片位_0】  →  images/01-cover.jpg
-【图片位_1】  →  images/02-asean.jpg
-【图片位_2】  →  images/03-tea.jpg
-...
-```
-
-模型按编号挑图，**不写 `<img>` 标签**。main 拿到 HTML 后做统一回填：
-
-```html
-<section style="text-align:center;margin:24px 0;line-height:0;border-radius:12px;overflow:hidden;">
-  <img src="images/01-cover.jpg" style="display:block;width:100%;height:auto;border-radius:12px;margin:0 auto;" alt="" />
-</section>
-```
-
-为什么用中文方括号：英文 `IMG_PLACEHOLDER_X` 会被 Gemini 当成 src 路径直接写进 `<img src="IMG_PLACEHOLDER_X">`，中文括号不会。
-
-### 字数硬约束
-
-排版后**正文字数（剥标签后）必须 ≥ 原文清洗后字数的 95%**。模型被 prompt 明确禁止摘要、改写、合并段落。
+| `WECHAT_APP_ID` / `WECHAT_APP_SECRET` | 是 | 公众号 API |
+| `EXTERNAL_API_KEY` | 当 layout 或 image mode 选 external 时 | chuanfanai.com 一把 key 管两件事 |
+| `LAYOUT_API_KEY` | 否 | v11 老变量名，v12 仍兼容作为兜底 |
 
 ## 三层加固内部细节（v11，给维护者看）
 
 ### 第 1 层：源稿层
 
-- `parseFrontmatter(text)` 在 `render-wechat-html.mjs` 里实现，被 `layout-html.mjs` 导入
-- 极简 YAML 解析：只支持 `key: value` 单行字符串，够标题/副标题/作者/摘要用
-- 支持引号包裹（`title: "带：冒号的标题"`）
+- `parseFrontmatter(text)` 在 `render-wechat-html.mjs` 里实现
+- 极简 YAML 解析：只支持 `key: value` 单行字符串
+- 支持引号包裹
 
 ### 第 2 层：渲染层
 
 - `stripLeadingTitle(html, title)` 在前 2000 字符里找第一个 `<h1>/<h2>/<h3>`
 - 文本归一化对比："完全相同 / normalized 相同 / 一方是另一方子串（长度比 ≥ 0.6）"
-- 命中就删除该 H 标签 + 紧随的 `<hr>` 装饰线 + 紧跟的短副标题 `<p>`（文本 < 80 字才删，避免误删正文）
+- 命中就删除该 H 标签 + 紧随的 `<hr>` 装饰线 + 紧跟的短副标题 `<p>`
 - `checkStructureBalance(html)` 统计 `<section>` 和 `<div>` 开闭数量，不平衡就 warn 但不 throw
-- self-test 覆盖 10 个 case，跑 `node scripts/render-wechat-html.mjs --self-test`
+- self-test 覆盖 10 个 case：`node scripts/render-wechat-html.mjs --self-test`
 
 ### 第 3 层：发布层
 
-- `resolveMeta({ args, htmlPath, rawHtml })` 实现 4 级优先级解析，附带 `_sources` 标记每个字段来源
-- 主流程在 `getAccessToken` **之前**调 `stripLeadingTitle` 和 `checkStructureBalance`，结构问题早暴露
-- `require_frontmatter` 开关在 `loadConfig` 之后立即检查，没满足条件就 exit 2
+- `resolveMeta` 实现 4 级优先级，附带 `_sources` 标记每个字段来源
+- 主流程在 `getAccessToken` 之前调 `stripLeadingTitle` 和 `checkStructureBalance`
+- `require_frontmatter` 开关在 `loadConfig` 之后立即检查
 
 ## 脚本说明（给维护者看）
 
-- `scripts/render-wechat-html.mjs` 用 `isMainModule()` 守卫（v11 修：原写法在 macOS symlink 路径下失效），只在被当入口直接执行时才跑 CLI
-- `scripts/publish-draft.mjs` 同样用 `isMainModule()`；用 `process.cwd()` 解析封面路径（不是 HTML 所在目录），因为封面一般是相对启动目录的
-- `scripts/layout-html.mjs` 同样用 `isMainModule()`；读 `config.json` 的 `layout_model` 段，没配就全用默认
+- `scripts/init-config.mjs` v12 改非交互 CLI flags，agent 来收集字段后调
+- `scripts/render-wechat-html.mjs` 用 `isMainModule()` 守卫，只在被入口直接执行时跑 CLI
+- `scripts/publish-draft.mjs` 同样用 `isMainModule()`；封面路径相对 cwd 解析
+- `scripts/layout-html.mjs` v12 加 `--mode external/prompt-only/postprocess` 三种子模式，prompt 从 `references/layout-prompt.md` 读
+- `scripts/generate-images.mjs` v12 新增，按 `image_mode` 分 external/self/manual 三条路径
 - 所有脚本：`fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)` 是跨平台正确的 main guard 写法
