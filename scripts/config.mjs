@@ -53,9 +53,9 @@ export function readEnvIfExists(filePath) {
 
 export function loadConfig(cwd = process.cwd(), extraDirs = []) {
   const p = configPaths(cwd, extraDirs);
-  // 优先级：用户 HOME（全局）< cwd 项目 < extraDirs（脚本目录）—— extraDirs 压最后，覆盖力最强
-  // 这样 scriptDir 下的配置可以覆盖项目级和用户级。
-  const merged = {};
+  // 优先级：defaultConfig（最底）→ HOME → cwd → extraDirs（脚本目录，覆盖力最强）
+  // v11：底部加 defaultConfig，确保 require_frontmatter 等新开关有默认值。
+  const merged = { ...defaultConfig() };
   for (const k of [p.userConfig, p.projectConfig, ...p.extra.map((e) => e.config)]) {
     Object.assign(merged, readJsonIfExists(k));
   }
@@ -88,6 +88,11 @@ export function defaultConfig() {
     source_window_days: 7,
     need_open_comment: 1,
     only_fans_can_comment: 0,
+    // v11 新增：强约束开关。开 true 后，
+    //   - layout-html.mjs 拒绝没有 --- frontmatter 头的 .md 源稿；
+    //   - publish-draft.mjs 拒绝既没有 sidecar .meta.json、也没有 --title 的发布请求。
+    // 默认 false 保持向后兼容；建议团队稳定使用 frontmatter 工作流后开 true。
+    require_frontmatter: false,
     writing_style: {
       identity: "digital-life-khazix",
       reader: "对 AI 和新技术保持好奇的公众号读者",
@@ -101,4 +106,3 @@ export function defaultConfig() {
     }
   };
 }
-
